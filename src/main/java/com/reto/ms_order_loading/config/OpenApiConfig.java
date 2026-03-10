@@ -15,7 +15,7 @@ public class OpenApiConfig {
     public OpenAPI pedidosOpenApi() {
         return new OpenAPI()
             .info(new Info()
-                .title("Pedidos Batch Hexagonal API")
+                .title("ms-order-loading")
                 .version("1.0.0")
                 .description("API para cargar pedidos desde CSV con validación batch e idempotencia"))
             .components(new Components().addSecuritySchemes("bearerAuth",
