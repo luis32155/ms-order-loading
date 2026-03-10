@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: pedidos-batch-hexagonal
+    name: ms-order-loading
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/pedidosdb?reWriteBatchedInserts=true}
     username: ${DB_USERNAME:postgres}
