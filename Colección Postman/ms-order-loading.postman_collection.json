@@ -1,0 +1,62 @@
+{
+  "info": {
+    "_postman_id": "fbab48fa-ce67-4c69-b651-59876688bc0b",
+    "name": "ms-order-loading",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "9608522",
+    "_collection_link": "https://go.postman.co/collection/9608522-fbab48fa-ce67-4c69-b651-59876688bc0b?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Cargar pedidos",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{bearerToken}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "value": null
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/pedidos/cargar",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "pedidos",
+            "cargar"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "bearerToken",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyZXRvLXRlY25pY28iLCJzY29wZSI6InBlZGlkb3Mud3JpdGUifQ.PynS75yxIEFvX3z_DOkM70ZzHlMsknqSLY-pSv7OEAw"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "carga-001"
+    }
+  ]
+}

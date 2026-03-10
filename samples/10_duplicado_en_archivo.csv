@@ -1,0 +1,3 @@
+numeroPedido,clienteId,fechaEntrega,estado,zonaEntrega,requiereRefrigeracion
+P1010,CLI-123,2026-03-20,PENDIENTE,ZONA1,true
+P1010,CLI-999,2026-03-21,CONFIRMADO,ZONA5,false

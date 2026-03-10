@@ -1,0 +1,2 @@
+numeroPedido,clienteId,fechaEntrega,estado,zonaEntrega,requiereRefrigeracion
+P1006,CLI-123,2026-03-20,ANULADO,ZONA1,true
