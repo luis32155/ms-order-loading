@@ -1,54 +1,76 @@
 # ms-order-loading
 
-Microservicio en Java 17 y Spring Boot 3 para cargar pedidos desde CSV, validarlos y persistirlos con arquitectura hexagonal, batch e idempotencia.
+Microservicio en Java 17 y Spring Boot 3 para cargar pedidos desde archivos CSV, validarlos y persistirlos usando arquitectura hexagonal, procesamiento batch e idempotencia.
 
-## Stack
+## Stack tecnológico
 
 - Java 17
-- Spring Boot 3.4.3
+- Spring Boot 3.4.4
 - Spring Web MVC
 - Spring Data JPA
 - PostgreSQL
 - Flyway
-- Spring Security OAuth2 Resource Server (JWT)
+- Spring Security OAuth2 Resource Server con JWT
 - Springdoc OpenAPI
+- JaCoCo
+- MapStruct
+- Lombok
 
 ## Arquitectura
 
-La solución está separada en cuatro capas:
+La solución está organizada en capas:
 
-- `domain`: reglas de negocio puras y modelos.
-- `application`: caso de uso `cargar pedidos` y orquestación batch.
-- `domain.port.out`: contratos que necesita el dominio/aplicación.
-- `adapter`: REST de entrada, JPA de salida, seguridad, logs y configuración.
-
-## Decisiones de diseño
-
-- Se eligió Spring MVC en lugar de WebFlux porque el problema es principalmente I/O de archivo + JPA batch y no requiere streaming reactivo.
-- El CSV se procesa por lotes configurables con `app.batch.size`.
-- La idempotencia se resuelve con `Idempotency-Key + SHA-256 del archivo`.
-- Para poder responder exactamente el mismo resultado ante reintentos idempotentes, se agregó `response_payload` y `status` en `cargas_idempotencia`.
-- Los catálogos de clientes, zonas y duplicados existentes se consultan por batch para evitar lecturas fila por fila.
-- La fecha válida se evalúa con `Clock` en zona `America/Lima`.
-
-## Supuestos
-
-- `numeroPedido` se valida con regex `^[A-Za-z0-9]+$`.
-- Un `cliente` válido es uno existente y `activo = true`.
-- Si llega el mismo archivo con la misma `Idempotency-Key`, se devuelve la misma respuesta sin volver a insertar pedidos.
-- Si llega el mismo archivo y la misma llave mientras el primero aún está en proceso, se responde `409`.
-- El volumen esperado es hasta 1000 filas por archivo, por eso el archivo se lee una vez a memoria para calcular hash y luego se procesa por lotes.
+- `domain`: modelos y reglas de negocio puras
+- `application`: casos de uso y orquestación
+- `adapter.in`: entrada REST
+- `adapter.out`: persistencia JPA y adaptadores externos
+- `config`: configuración general, seguridad, OpenAPI y batch
 
 ## Estructura principal
 
 ```text
-src/main/java/com/reto/ms_order_loading.adapter
+src/main/java/com/reto/ms_order_loading
 ├── adapter
+│   ├── in
+│   └── out
 ├── application
 ├── config
 ├── domain
 └── MsOrderLoadingApplication.java
 ```
+
+## Objetivo del microservicio
+
+Exponer un endpoint para recibir un archivo CSV con pedidos, validarlo por filas, guardar únicamente los registros válidos y devolver un resumen del procesamiento.
+
+## Reglas de negocio implementadas
+
+Cada fila del CSV valida lo siguiente:
+
+- `numeroPedido`: obligatorio, alfanumérico y no duplicado
+- `clienteId`: debe existir y estar activo
+- `fechaEntrega`: no puede ser una fecha pasada, considerando `America/Lima`
+- `estado`: debe ser `PENDIENTE`, `CONFIRMADO` o `ENTREGADO`
+- `zonaEntrega`: debe existir
+- `requiereRefrigeracion`: debe ser `true` o `false`
+- si `requiereRefrigeracion = true`, la zona debe soportar refrigeración
+
+## Decisiones de diseño
+
+- Se eligió Spring MVC porque el reto trabaja con carga de archivos y persistencia JPA batch
+- El procesamiento se realiza por lotes configurables con `app.batch.size`
+- La idempotencia se maneja con `Idempotency-Key + hash SHA-256 del archivo`
+- Se almacena `status` y `response_payload` en `cargas_idempotencia` para devolver la misma respuesta ante reintentos del mismo archivo
+- Los catálogos y duplicados se consultan por batch para evitar validaciones fila por fila contra base de datos
+- La fecha se valida usando `Clock` en zona `America/Lima`
+
+## Supuestos
+
+- `numeroPedido` usa la regex `^[A-Za-z0-9]+$`
+- Un cliente válido es uno existente con `activo = true`
+- Si llega el mismo archivo con la misma `Idempotency-Key`, se devuelve la misma respuesta sin volver a persistir pedidos
+- Si llega la misma llave mientras la carga sigue en proceso, se responde `409 Conflict`
+- El volumen esperado es hasta 1000 filas por archivo
 
 ## Requisitos
 
@@ -82,19 +104,19 @@ app:
     size: 500
 ```
 
-Rango permitido: 500 a 1000.
+Rango permitido: de `500` a `1000`.
 
 ## Autenticación JWT local
 
-El proyecto valida JWT firmado con una llave HMAC local configurada en `application.yml`.
+El proyecto protege los endpoints con JWT firmado con llave HMAC local configurada en `application.yml`.
 
-Header:
+Header requerido:
 
 ```text
 Authorization: Bearer <token>
 ```
 
-Token de ejemplo listo para usar en local:
+Token local de ejemplo:
 
 ```text
 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyZXRvLXRlY25pY28iLCJzY29wZSI6InBlZGlkb3Mud3JpdGUifQ.PynS75yxIEFvX3z_DOkM70ZzHlMsknqSLY-pSv7OEAw
@@ -111,29 +133,33 @@ Authorization: Bearer <token>
 
 Campo multipart:
 
-- `file`: archivo CSV UTF-8
+- `file`: archivo CSV en UTF-8
 
 ## curl de ejemplo
 
 ```bash
-curl --location 'http://localhost:8080/pedidos/cargar'   --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyZXRvLXRlY25pY28iLCJzY29wZSI6InBlZGlkb3Mud3JpdGUifQ.PynS75yxIEFvX3z_DOkM70ZzHlMsknqSLY-pSv7OEAw'   --header 'Idempotency-Key: carga-001'   --form 'file=@samples/pedidos-validos.csv'
+curl --location 'http://localhost:8080/pedidos/cargar' \
+  --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJyZXRvLXRlY25pY28iLCJzY29wZSI6InBlZGlkb3Mud3JpdGUifQ.PynS75yxIEFvX3z_DOkM70ZzHlMsknqSLY-pSv7OEAw' \
+  --header 'Idempotency-Key: carga-001' \
+  --form 'file=@samples/pedidos-validos.csv'
 ```
 
-## Estrategia de batch
+## Estrategia de procesamiento batch
 
-1. Se lee el CSV y se corta en lotes configurables.
-2. Por cada lote se obtienen en bloque:
+1. Se lee el archivo CSV
+2. Se divide en lotes configurables
+3. Por cada lote se consultan en bloque:
    - clientes activos existentes
    - zonas existentes
-   - pedidos ya existentes en BD
-3. Se valida fila por fila solo contra estructuras en memoria del batch.
-4. Solo los válidos se envían a `saveAll`.
-5. Hibernate agrupa inserts con `hibernate.jdbc.batch_size` y `order_inserts=true`.
+   - pedidos ya registrados
+4. Se valida cada fila usando estructuras en memoria
+5. Solo los registros válidos se envían a `saveAll`
+6. Hibernate agrupa inserts usando batch JDBC
 
 ## Migraciones Flyway
 
-- `V1__init_schema.sql`: crea tablas, índices y restricciones.
-- `V2__seed_catalogs.sql`: inserta clientes y zonas base para pruebas.
+- `V1__init_schema.sql`: creación de tablas, índices y restricciones
+- `V2__seed_catalogs.sql`: carga inicial de clientes y zonas para pruebas
 
 ## Swagger y OpenAPI
 
@@ -142,19 +168,19 @@ curl --location 'http://localhost:8080/pedidos/cargar'   --header 'Authorization
 
 ## Logs estructurados
 
-Los logs salen en JSON e incluyen `correlationId` desde `X-Correlation-Id` o uno generado automáticamente.
+Los logs se generan en formato JSON e incluyen `correlationId`, obtenido desde `X-Correlation-Id` o generado automáticamente si no viene en la request.
 
-## Límites conocidos
+## Carpetas incluidas en el proyecto
 
-- El parser soporta el esquema definido por el reto y no contempla columnas adicionales complejas ni campos con comas escapadas fuera del soporte estándar de Commons CSV.
-- El dedupe entre cargas distintas depende de `Idempotency-Key + hash`, no solo del contenido.
-- Ante concurrencia exacta de la misma carga, la segunda petición puede recibir `409` si la primera sigue en proceso.
+- `Colección Postman`
+- `samples`
 
-## Archivos incluidos
+## Archivos de apoyo
 
-- `samples/pedidos-validos.csv`
-- `samples/pedidos-mixto.csv`
-- `postman/PedidosCarga.postman_collection.json`
+En el proyecto se incluyen archivos de ejemplo para pruebas manuales:
+
+- carpeta `samples` con CSV de prueba
+- carpeta `Colección Postman` con la colección para consumir el endpoint
 
 ## Respuesta esperada
 
@@ -178,3 +204,10 @@ Los logs salen en JSON e incluyen `correlationId` desde `X-Correlation-Id` o uno
   ]
 }
 ```
+
+## Límites conocidos
+
+- El parser soporta únicamente la estructura definida en el reto
+- El dedupe entre cargas distintas depende de `Idempotency-Key + hash`
+- Ante concurrencia exacta de la misma carga, la segunda petición puede responder `409 Conflict`
+- El comportamiento batch está optimizado para el rango planteado en el reto

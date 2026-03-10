@@ -1,0 +1,2 @@
+numeroPedido,clienteId,fechaEntrega,estado,zonaEntrega,requiereRefrigeracion
+P-1011,CLI-000,2026/03/01,ANULADO,ZONA9,X
