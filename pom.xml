@@ -161,7 +161,7 @@
 								<rule>
 									<element>PACKAGE</element>
 									<includes>
-										<include>pe.com.reto.ms_order_loading.domain.service</include>
+										<include>com.reto.ms_order_loading.domain.service</include>
 									</includes>
 									<limits>
 										<limit>
