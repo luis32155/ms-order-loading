@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pedidos-batch-hexagonal
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/pedidosdb?reWriteBatchedInserts=true}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:Babi210820***}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: ${HIBERNATE_BATCH_SIZE:500}
+        order_inserts: true
+        order_updates: true
+        format_sql: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+  jackson:
+    default-property-inclusion: non_null
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui
+
+logging:
+  level:
+    root: INFO
+    pe.com.reto.ms_order_loading: INFO
+
+app:
+  batch:
+    size: ${APP_BATCH_SIZE:500}
+  security:
+    jwt-secret: ${JWT_SECRET:pedido-batch-secret-key-2026-hexagonal-123456}
