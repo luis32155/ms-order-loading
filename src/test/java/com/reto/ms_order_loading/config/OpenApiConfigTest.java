@@ -12,7 +12,7 @@ class OpenApiConfigTest {
 
         var openApi = config.pedidosOpenApi();
 
-        assertThat(openApi.getInfo().getTitle()).isEqualTo("Pedidos Batch Hexagonal API");
+        assertThat(openApi.getInfo().getTitle()).isEqualTo("ms-order-loading");
         assertThat(openApi.getInfo().getVersion()).isEqualTo("1.0.0");
         assertThat(openApi.getComponents().getSecuritySchemes()).containsKey("bearerAuth");
         assertThat(openApi.getSecurity()).hasSize(1);
