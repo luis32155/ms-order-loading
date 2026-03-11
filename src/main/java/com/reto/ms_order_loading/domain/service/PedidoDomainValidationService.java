@@ -19,6 +19,7 @@ public class PedidoDomainValidationService {
 
     public RowValidationResult validate(CsvPedidoRow row, ValidationContext context) {
         List<ValidationError> errors = new ArrayList<>();
+        int lineNumber = row.lineNumber();
 
         String numeroPedido = normalize(row.numeroPedido());
         String clienteId = normalize(row.clienteId());
@@ -26,28 +27,15 @@ public class PedidoDomainValidationService {
         String estadoRaw = normalize(row.estado());
         String refrigeracionRaw = normalize(row.requiereRefrigeracion());
 
-        if (!StringUtils.hasText(numeroPedido) || !ORDER_NUMBER_PATTERN.matcher(numeroPedido).matches()) {
-            errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.NUMERO_PEDIDO_INVALIDO, "numeroPedido debe ser alfanumérico"));
-        } else if (context.duplicateInFile() || context.existingOrderNumbers().contains(numeroPedido)) {
-            errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.DUPLICADO, "numeroPedido ya existe en el archivo o en la base de datos"));
-        }
-
-        if (!StringUtils.hasText(clienteId) || !context.activeClientIds().contains(clienteId)) {
-            errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.CLIENTE_NO_ENCONTRADO, "El cliente %s no existe o está inactivo".formatted(clienteId)));
-        }
+        validateOrderNumber(numeroPedido, lineNumber, context, errors);
+        validateClient(clienteId, lineNumber, context, errors);
 
         LocalDate fechaEntrega = parseDate(row, errors, context.todayLima());
-        EstadoPedido estado = parseStatus(row.lineNumber(), estadoRaw, errors);
-        Boolean requiereRefrigeracion = parseBoolean(row.lineNumber(), refrigeracionRaw, errors);
-        Zona zona = context.zonesById().get(zonaEntrega);
+        EstadoPedido estado = parseStatus(lineNumber, estadoRaw, errors);
+        Boolean requiereRefrigeracion = parseBoolean(lineNumber, refrigeracionRaw, errors);
 
-        if (!StringUtils.hasText(zonaEntrega) || zona == null) {
-            errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.ZONA_INVALIDA, "La zona %s no existe".formatted(zonaEntrega)));
-        }
-
-        if (Boolean.TRUE.equals(requiereRefrigeracion) && zona != null && !zona.soporteRefrigeracion()) {
-            errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.CADENA_FRIO_NO_SOPORTADA, "La zona %s no soporta cadena de frío".formatted(zonaEntrega)));
-        }
+        Zona zona = validateZone(zonaEntrega, lineNumber, context, errors);
+        validateRefrigeracionZone(requiereRefrigeracion, zona, zonaEntrega, lineNumber, errors);
 
         if (!errors.isEmpty()) {
             return new RowValidationResult(Optional.empty(), errors);
@@ -57,37 +45,79 @@ public class PedidoDomainValidationService {
         return new RowValidationResult(Optional.of(pedido), List.of());
     }
 
+    private void validateOrderNumber(String numeroPedido, int lineNumber, ValidationContext context, List<ValidationError> errors) {
+        if (!StringUtils.hasText(numeroPedido) || !ORDER_NUMBER_PATTERN.matcher(numeroPedido).matches()) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.NUMERO_PEDIDO_INVALIDO, "numeroPedido debe ser alfanumérico"));
+        } else if (context.duplicateInFile() || context.existingOrderNumbers().contains(numeroPedido)) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.DUPLICADO, "numeroPedido ya existe en el archivo o en la base de datos"));
+        }
+    }
+
+    private void validateClient(String clienteId, int lineNumber, ValidationContext context, List<ValidationError> errors) {
+        if (!StringUtils.hasText(clienteId) || !context.activeClientIds().contains(clienteId)) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.CLIENTE_NO_ENCONTRADO, "El cliente %s no existe o está inactivo".formatted(clienteId)));
+        }
+    }
+
+    private Zona validateZone(String zonaEntrega, int lineNumber, ValidationContext context, List<ValidationError> errors) {
+        if (!StringUtils.hasText(zonaEntrega)) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.ZONA_INVALIDA, "La zona %s no existe".formatted(zonaEntrega)));
+            return null;
+        }
+
+        Zona zona = context.zonesById().get(zonaEntrega);
+        if (zona == null) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.ZONA_INVALIDA, "La zona %s no existe".formatted(zonaEntrega)));
+        }
+        return zona;
+    }
+
+    private void validateRefrigeracionZone(Boolean requiereRefrigeracion, Zona zona, String zonaEntrega, int lineNumber, List<ValidationError> errors) {
+        if (Boolean.TRUE.equals(requiereRefrigeracion) && zona != null && !zona.soporteRefrigeracion()) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.CADENA_FRIO_NO_SOPORTADA, "La zona %s no soporta cadena de frío".formatted(zonaEntrega)));
+        }
+    }
+
     private LocalDate parseDate(CsvPedidoRow row, List<ValidationError> errors, LocalDate todayLima) {
+        String fechaStr = normalize(row.fechaEntrega());
         try {
-            LocalDate fecha = LocalDate.parse(normalize(row.fechaEntrega()));
+            LocalDate fecha = LocalDate.parse(fechaStr);
             if (fecha.isBefore(todayLima)) {
                 errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.FECHA_INVALIDA, "fechaEntrega no puede ser pasada"));
             }
             return fecha;
-        } catch (DateTimeParseException exception) {
+        } catch (DateTimeParseException | NullPointerException e) {
             errors.add(new ValidationError(row.lineNumber(), ValidationErrorType.FECHA_INVALIDA, "fechaEntrega no tiene un formato válido YYYY-MM-DD"));
             return null;
         }
     }
 
     private EstadoPedido parseStatus(int lineNumber, String status, List<ValidationError> errors) {
+        if (!StringUtils.hasText(status)) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.ESTADO_INVALIDO, "estado debe ser PENDIENTE, CONFIRMADO o ENTREGADO"));
+            return null;
+        }
         try {
             return EstadoPedido.fromValue(status);
-        } catch (IllegalArgumentException exception) {
+        } catch (IllegalArgumentException e) {
             errors.add(new ValidationError(lineNumber, ValidationErrorType.ESTADO_INVALIDO, "estado debe ser PENDIENTE, CONFIRMADO o ENTREGADO"));
             return null;
         }
     }
 
     private Boolean parseBoolean(int lineNumber, String value, List<ValidationError> errors) {
-        if ("true".equalsIgnoreCase(value)) {
-            return true;
+        if (!StringUtils.hasText(value)) {
+            errors.add(new ValidationError(lineNumber, ValidationErrorType.REFRIGERACION_INVALIDA, "requiereRefrigeracion debe ser true o false"));
+            return null;
         }
-        if ("false".equalsIgnoreCase(value)) {
-            return false;
-        }
-        errors.add(new ValidationError(lineNumber, ValidationErrorType.REFRIGERACION_INVALIDA, "requiereRefrigeracion debe ser true o false"));
-        return null;
+        return switch (value.toLowerCase()) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> {
+                errors.add(new ValidationError(lineNumber, ValidationErrorType.REFRIGERACION_INVALIDA, "requiereRefrigeracion debe ser true o false"));
+                yield null;
+            }
+        };
     }
 
     private String normalize(String value) {
